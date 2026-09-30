@@ -192,3 +192,21 @@ def test_zapisz_folder_tylko_do_odczytu_na_biurko(tmp_path, monkeypatch):
     monkeypatch.setattr(zapis.os, "access", lambda sciezka, tryb: Path(sciezka) != cel)
     wynik = zapisz(FRAGMENTY, nagranie(tmp_path), "docx", biurko=biurko, folder=cel)
     assert wynik == biurko / "Wykład 3.docx"
+
+
+def test_zapisz_brak_uprawnien_w_wybranym_folderze_na_biurko(tmp_path, monkeypatch):
+    biurko = tmp_path / "Biurko"
+    biurko.mkdir()
+    cel = tmp_path / "Chroniony"
+    cel.mkdir()
+    oryginalny = zapis.PISARZE["txt"]
+
+    def pisarz(sciezka, fragmenty, tytul):
+        if sciezka.parent == cel:
+            raise PermissionError("macOS odmówił")
+        oryginalny(sciezka, fragmenty, tytul)
+
+    monkeypatch.setitem(zapis.PISARZE, "txt", pisarz)
+    wynik = zapisz(FRAGMENTY, nagranie(tmp_path), "txt", biurko=biurko, folder=cel)
+    assert wynik == biurko / "Wykład 3.txt"
+    assert list(cel.iterdir()) == []

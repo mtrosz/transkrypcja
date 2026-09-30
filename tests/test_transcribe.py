@@ -240,9 +240,19 @@ def test_main_przekazuje_folder(tmp_path, monkeypatch):
     nagranie = tmp_path / "Wykład 3.m4a"
     nagranie.write_bytes(b"audio")
 
+    # AppleScript podaje ścieżkę folderu zakończoną ukośnikiem.
     transcribe.main([str(nagranie), "--format", "txt", "--tryb", "szybko", "--status", str(tmp_path / "s.json"),
-                     "--folder", str(tmp_path / "Transkrypcje")])
+                     "--folder", str(tmp_path / "Transkrypcje") + "/"])
     transcribe.main([str(nagranie), "--format", "txt", "--tryb", "szybko", "--status", str(tmp_path / "s.json")])
 
     assert wywolania[0][1]["folder"] == tmp_path / "Transkrypcje"
     assert wywolania[1][1]["folder"] is None
+
+
+def test_uruchom_folder_tylko_do_odczytu_uwaga_o_biurku(tmp_path, monkeypatch):
+    cel = tmp_path / "Tylko do odczytu"
+    cel.mkdir()
+    monkeypatch.setattr(zapis.os, "access", lambda sciezka, tryb: Path(sciezka) != cel)
+    _, st, _ = odpal(tmp_path, AtrapaSilnika(FRAGMENTY), folder=cel)
+    assert st["wynik"] == str(tmp_path / "Biurko" / "Wykład 3.txt")
+    assert st["uwaga"] == "Plik zapisano na Biurku."

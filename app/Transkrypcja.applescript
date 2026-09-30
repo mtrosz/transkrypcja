@@ -102,7 +102,7 @@ on przetworz(pliki)
 	pokazPodsumowanie(wyniki, komunikaty)
 end przetworz
 
--- Jedno okno: format, tryb i znaczniki czasu, z zapamiętanymi ostatnimi wyborami (defaults pl.transkrypcja).
+-- Jedno okno: format, tryb, miejsce zapisu i znaczniki czasu, z zapamiętanymi ostatnimi wyborami (defaults pl.transkrypcja).
 -- Zwraca {kod formatu, kod trybu, czas (true/false), folder zapisu ("" = obok nagrania)}.
 -- „Anuluj” (także w wyborze innego folderu) → błąd -128, aplikacja kończy się po cichu.
 on oknoTranskrypcji(pliki)
@@ -173,7 +173,16 @@ on oknoTranskrypcji(pliki)
 	else if kluczZapisu is "inny" then
 		set folderZapisu to innyFolder
 	else if kluczZapisu is "wybierz" then
-		set folderZapisu to POSIX path of (choose folder with prompt "Gdzie zapisać transkrypcję?")
+		set wybrany to missing value
+		if innyFolder is not "" then
+			try
+				set wybrany to choose folder with prompt "Gdzie zapisać transkrypcję?" default location (POSIX file innyFolder as alias)
+			on error errMsg number n
+				if n is -128 then error number -128
+			end try
+		end if
+		if wybrany is missing value then set wybrany to choose folder with prompt "Gdzie zapisać transkrypcję?"
+		set folderZapisu to POSIX path of wybrany
 		zapiszUstawienie("folder", folderZapisu)
 		set kluczZapisu to "inny"
 	end if
@@ -200,7 +209,9 @@ end etykieta
 on nazwaFolderu(sciezka)
 	set krotka to sciezka
 	set dom to POSIX path of (path to home folder)
-	if sciezka starts with dom and (length of sciezka) > (length of dom) then
+	if sciezka is dom then
+		set krotka to "~"
+	else if sciezka starts with dom and (length of sciezka) > (length of dom) then
 		set krotka to "~/" & (text ((length of dom) + 1) thru -1 of sciezka)
 	end if
 	if krotka ends with "/" and (length of krotka) > 1 then set krotka to text 1 thru -2 of krotka
