@@ -39,7 +39,8 @@ class AtrapaSilnika:
         return self.fragmenty
 
 
-def odpal(tmp_path, silnik, format="txt", nazwa="Wykład 3.m4a", podpowiedz="Wykład z prawa.", czas=False):
+def odpal(tmp_path, silnik, format="txt", nazwa="Wykład 3.m4a", podpowiedz="Wykład z prawa.", czas=False,
+          folder=None):
     nagranie = tmp_path / nazwa
     nagranie.write_bytes(b"audio")
     status_plik = tmp_path / "status.json"
@@ -47,7 +48,7 @@ def odpal(tmp_path, silnik, format="txt", nazwa="Wykład 3.m4a", podpowiedz="Wyk
     biurko = tmp_path / "Biurko"
     biurko.mkdir(exist_ok=True)
     kod = transcribe.uruchom(
-        nagranie, format, "dokladnie", Status(status_plik, odstep_s=0), silnik, podpowiedz, log, biurko, czas=czas
+        nagranie, format, "dokladnie", Status(status_plik, odstep_s=0), silnik, podpowiedz, log, biurko, czas=czas, folder=folder
     )
     return kod, json.loads(status_plik.read_text(encoding="utf-8")), log
 
@@ -206,3 +207,42 @@ def test_main_odrzuca_stary_format_txt_czas(tmp_path):
     with pytest.raises(SystemExit):
         transcribe.main([str(tmp_path / "a.m4a"), "--format", "txt_czas", "--tryb", "szybko",
                          "--status", str(tmp_path / "status.json")])
+
+
+def test_uruchom_do_wybranego_folderu_bez_uwagi(tmp_path):
+    cel = tmp_path / "Transkrypcje"
+    cel.mkdir()
+    _, st, _ = odpal(tmp_path, AtrapaSilnika(FRAGMENTY), folder=cel)
+    assert st["wynik"] == str(cel / "Wykład 3.txt")
+    assert st["uwaga"] == ""
+
+
+def test_uruchom_wybrane_biurko_bez_uwagi(tmp_path):
+    _, st, _ = odpal(tmp_path, AtrapaSilnika(FRAGMENTY), folder=tmp_path / "Biurko")
+    assert st["wynik"] == str(tmp_path / "Biurko" / "Wykład 3.txt")
+    assert st["uwaga"] == ""
+
+
+def test_uruchom_brak_folderu_uwaga_o_biurku(tmp_path):
+    _, st, _ = odpal(tmp_path, AtrapaSilnika(FRAGMENTY), folder=tmp_path / "nie ma")
+    assert st["wynik"] == str(tmp_path / "Biurko" / "Wykład 3.txt")
+    assert st["uwaga"] == "Plik zapisano na Biurku."
+
+
+def test_main_przekazuje_folder(tmp_path, monkeypatch):
+    monkeypatch.setenv("TRANSKRYPCJA_KATALOG", str(tmp_path))
+    for zmienna in ("PATH", "HF_HOME", "HF_HUB_OFFLINE"):
+        monkeypatch.setenv(zmienna, os.environ.get(zmienna, ""))
+    monkeypatch.setitem(sys.modules, "whisper_mlx", types.ModuleType("whisper_mlx"))
+    monkeypatch.setattr(transcribe.signal, "signal", lambda *a: None)
+    wywolania = []
+    monkeypatch.setattr(transcribe, "uruchom", lambda *a, **k: wywolania.append((a, k)) or 0)
+    nagranie = tmp_path / "Wykład 3.m4a"
+    nagranie.write_bytes(b"audio")
+
+    transcribe.main([str(nagranie), "--format", "txt", "--tryb", "szybko", "--status", str(tmp_path / "s.json"),
+                     "--folder", str(tmp_path / "Transkrypcje")])
+    transcribe.main([str(nagranie), "--format", "txt", "--tryb", "szybko", "--status", str(tmp_path / "s.json")])
+
+    assert wywolania[0][1]["folder"] == tmp_path / "Transkrypcje"
+    assert wywolania[1][1]["folder"] is None

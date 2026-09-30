@@ -84,11 +84,14 @@ def _zapisz_w(folder: Path, fragmenty: list[Fragment], nagranie: Path, format: s
     return cel
 
 
-def zapisz(fragmenty: list[Fragment], nagranie: Path, format: str, biurko: Path, czas: bool = False) -> Path:
-    """Zapisuje obok nagrania (albo na Biurku, gdy folder jest tylko do odczytu lub macOS odmawia zapisu). Nigdy nie nadpisuje."""
-    if not os.access(nagranie.parent, os.W_OK):
+def zapisz(fragmenty: list[Fragment], nagranie: Path, format: str, biurko: Path, czas: bool = False,
+           folder: Path | None = None) -> Path:
+    """Zapisuje w wybranym folderze (domyślnie obok nagrania). Gdy folderu nie ma, jest tylko do odczytu
+    albo macOS odmawia zapisu – na Biurku. Nigdy nie nadpisuje."""
+    cel = folder if folder is not None else nagranie.parent
+    if not cel.is_dir() or not os.access(cel, os.W_OK):
         return _zapisz_w(biurko, fragmenty, nagranie, format, czas)
     try:
-        return _zapisz_w(nagranie.parent, fragmenty, nagranie, format, czas)
+        return _zapisz_w(cel, fragmenty, nagranie, format, czas)
     except PermissionError:
         return _zapisz_w(biurko, fragmenty, nagranie, format, czas)

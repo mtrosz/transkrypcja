@@ -1,6 +1,6 @@
 """Silnik transkrypcji – uruchamiany przez Transkrypcja.app w tle.
 
-Użycie: transcribe.py <nagranie> --format {txt,docx} [--czas] --tryb {dokladnie,szybko} --status <status.json>
+Użycie: transcribe.py <nagranie> --format {txt,docx} [--czas] --tryb {dokladnie,szybko} --status <status.json> [--folder <katalog>]
 Wynik i błędy trafiają do pliku status.json (patrz status.py); kod wyjścia 0 = sukces, 1 = błąd.
 """
 import argparse
@@ -45,7 +45,7 @@ def sprawdz_dostep(nagranie: Path) -> None:
 
 
 def uruchom(nagranie: Path, format: str, tryb: str, status: Status, silnik, podpowiedz: str | None,
-            log: Path, biurko: Path, czas: bool = False) -> int:
+            log: Path, biurko: Path, czas: bool = False, folder: Path | None = None) -> int:
     nazwa = nagranie.name
     try:
         status.etap("wczytywanie")
@@ -69,8 +69,9 @@ def uruchom(nagranie: Path, format: str, tryb: str, status: Status, silnik, podp
             return 1
 
         status.etap("zapis")
-        wynik = zapisz(fragmenty, nagranie, format, biurko, czas=czas)
-        uwaga = UWAGA_BIURKO if wynik.parent.resolve() != nagranie.parent.resolve() else ""
+        wynik = zapisz(fragmenty, nagranie, format, biurko, czas=czas, folder=folder)
+        oczekiwany = folder if folder is not None else nagranie.parent
+        uwaga = UWAGA_BIURKO if wynik.parent.resolve() != oczekiwany.resolve() else ""
         status.wynik(wynik, uwaga)
         return 0
     except Exception:
@@ -86,6 +87,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--czas", action="store_true", help="znaczniki czasu przy każdym fragmencie")
     parser.add_argument("--tryb", choices=["dokladnie", "szybko"], required=True)
     parser.add_argument("--status", type=Path, required=True)
+    parser.add_argument("--folder", type=Path, help="folder na wynik (domyślnie obok nagrania)")
     args = parser.parse_args(argv)
 
     # Anuluj w okienku wysyła SIGTERM – zamieniamy go na wyjątek, żeby zapis.py posprzątał plik częściowy.
@@ -106,7 +108,8 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     return uruchom(args.nagranie, args.format, args.tryb, status, silnik,
-                   wczytaj_podpowiedz(SLOWNIK), log, Path.home() / "Desktop", czas=args.czas)
+                   wczytaj_podpowiedz(SLOWNIK), log, Path.home() / "Desktop", czas=args.czas,
+                   folder=args.folder)
 
 
 if __name__ == "__main__":

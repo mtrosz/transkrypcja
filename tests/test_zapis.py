@@ -163,3 +163,32 @@ def test_zapisz_brak_uprawnien_w_folderze_nagrania_zapisuje_na_biurku(tmp_path, 
     assert zapisz(FRAGMENTY, n, "txt", biurko=biurko) == biurko / "Wykład 3.txt"
     assert sorted(p.name for p in folder.iterdir()) == ["Wykład 3.m4a"]
     assert sorted(p.name for p in biurko.iterdir()) == ["Wykład 3.txt"]
+
+
+# --- wybrany folder zapisu ---
+
+
+def test_zapisz_do_wybranego_folderu(tmp_path):
+    cel = tmp_path / "Transkrypcje"
+    cel.mkdir()
+    (cel / "Wykład 3.txt").write_text("stary", encoding="utf-8")
+    wynik = zapisz(FRAGMENTY, nagranie(tmp_path), "txt", biurko=tmp_path / "Biurko", folder=cel)
+    assert wynik == cel / "Wykład 3 (2).txt"
+    assert not (tmp_path / "Wykład 3.txt").exists()
+
+
+def test_zapisz_nieistniejacy_folder_na_biurko(tmp_path):
+    biurko = tmp_path / "Biurko"
+    biurko.mkdir()
+    wynik = zapisz(FRAGMENTY, nagranie(tmp_path), "txt", biurko=biurko, folder=tmp_path / "odłączony pendrive")
+    assert wynik == biurko / "Wykład 3.txt"
+
+
+def test_zapisz_folder_tylko_do_odczytu_na_biurko(tmp_path, monkeypatch):
+    biurko = tmp_path / "Biurko"
+    biurko.mkdir()
+    cel = tmp_path / "Tylko do odczytu"
+    cel.mkdir()
+    monkeypatch.setattr(zapis.os, "access", lambda sciezka, tryb: Path(sciezka) != cel)
+    wynik = zapisz(FRAGMENTY, nagranie(tmp_path), "docx", biurko=biurko, folder=cel)
+    assert wynik == biurko / "Wykład 3.docx"
