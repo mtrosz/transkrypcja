@@ -51,6 +51,8 @@ on przetworz(pliki)
 	set kodTrybu to item 2 of wybor
 	set opcjaCzasu to ""
 	if item 3 of wybor then set opcjaCzasu to " --czas"
+	set opcjaFolderu to ""
+	if item 4 of wybor is not "" then set opcjaFolderu to " --folder " & quoted form of (item 4 of wybor)
 
 	set katalog to katalogAplikacji()
 	set python to katalog & "venv/bin/python"
@@ -72,7 +74,7 @@ on przetworz(pliki)
 			do shell script "rm -f " & quoted form of statusPlik
 
 			set pid to do shell script quoted form of python & " " & quoted form of skrypt & " " & quoted form of plik & ¬
-				" --format " & kodFormatu & opcjaCzasu & " --tryb " & kodTrybu & " --status " & quoted form of statusPlik & ¬
+				" --format " & kodFormatu & opcjaCzasu & opcjaFolderu & " --tryb " & kodTrybu & " --status " & quoted form of statusPlik & ¬
 				" >/dev/null 2>&1 & p=$!; caffeinate -i -w $p >/dev/null 2>&1 & echo $p"
 
 			set etap to czekaj(pid, statusPlik)
@@ -101,7 +103,8 @@ on przetworz(pliki)
 end przetworz
 
 -- Jedno okno: format, tryb i znaczniki czasu, z zapamiętanymi ostatnimi wyborami (defaults pl.transkrypcja).
--- Zwraca {kod formatu, kod trybu, czas (true/false)}. „Anuluj” → błąd -128, aplikacja kończy się po cichu.
+-- Zwraca {kod formatu, kod trybu, czas (true/false), folder zapisu ("" = obok nagrania)}.
+-- „Anuluj” (także w wyborze innego folderu) → błąd -128, aplikacja kończy się po cichu.
 on oknoTranskrypcji(pliki)
 	set ostatniFormat to odczytajUstawienie("format", "Word")
 	set ostatniTryb to odczytajUstawienie("tryb", "Dokładnie")
@@ -113,19 +116,36 @@ on oknoTranskrypcji(pliki)
 	set nrFormatu to indeksNa(ostatniFormat, ETYKIETY_FORMATOW, 2)
 	set nrTrybu to indeksNa(ostatniTryb, KLUCZE_TRYBOW, 1)
 
-	set widok to current application's NSView's alloc()'s initWithFrame:{{0, 0}, {380, 112}}
-	widok's addSubview:(my etykieta("Format:", {{0, 86}, {60, 20}}, 13))
-	set listaFormatow to current application's NSPopUpButton's alloc()'s initWithFrame:{{64, 82}, {312, 26}} pullsDown:false
+	-- Lista „Zapisz w:” – zapamiętany własny folder pojawia się jako osobna pozycja.
+	set innyFolder to odczytajUstawienie("folder", "")
+	set etykietyZapisu to {"Obok nagrania", "Biurko", "Dokumenty"}
+	set kluczeZapisu to {"obok", "biurko", "dokumenty"}
+	if innyFolder is not "" then
+		set end of etykietyZapisu to nazwaFolderu(innyFolder)
+		set end of kluczeZapisu to "inny"
+	end if
+	set end of etykietyZapisu to "Inny folder…"
+	set end of kluczeZapisu to "wybierz"
+	set nrZapisu to indeksNa(odczytajUstawienie("zapis", "obok"), kluczeZapisu, 1)
+
+	set widok to current application's NSView's alloc()'s initWithFrame:{{0, 0}, {380, 142}}
+	widok's addSubview:(my etykieta("Format:", {{0, 116}, {64, 20}}, 13))
+	set listaFormatow to current application's NSPopUpButton's alloc()'s initWithFrame:{{68, 112}, {308, 26}} pullsDown:false
 	listaFormatow's addItemsWithTitles:ETYKIETY_FORMATOW
 	listaFormatow's selectItemAtIndex:(nrFormatu - 1)
 	widok's addSubview:listaFormatow
-	widok's addSubview:(my etykieta("Tryb:", {{0, 56}, {60, 20}}, 13))
-	set listaTrybow to current application's NSPopUpButton's alloc()'s initWithFrame:{{64, 52}, {312, 26}} pullsDown:false
+	widok's addSubview:(my etykieta("Tryb:", {{0, 86}, {64, 20}}, 13))
+	set listaTrybow to current application's NSPopUpButton's alloc()'s initWithFrame:{{68, 82}, {308, 26}} pullsDown:false
 	listaTrybow's addItemsWithTitles:OPISY_TRYBOW
 	listaTrybow's selectItemAtIndex:(nrTrybu - 1)
 	widok's addSubview:listaTrybow
+	widok's addSubview:(my etykieta("Zapisz w:", {{0, 56}, {64, 20}}, 13))
+	set listaZapisu to current application's NSPopUpButton's alloc()'s initWithFrame:{{68, 52}, {308, 26}} pullsDown:false
+	listaZapisu's addItemsWithTitles:etykietyZapisu
+	listaZapisu's selectItemAtIndex:(nrZapisu - 1)
+	widok's addSubview:listaZapisu
 	set poleCzasu to current application's NSButton's checkboxWithTitle:"Znaczniki czasu" target:(missing value) action:(missing value)
-	poleCzasu's setFrame:{{62, 24}, {300, 22}}
+	poleCzasu's setFrame:{{66, 24}, {300, 22}}
 	if ostatniCzas is "1" then poleCzasu's setState:1
 	widok's addSubview:poleCzasu
 	widok's addSubview:(my etykieta("wersja " & wersjaAplikacji(), {{0, 0}, {200, 16}}, 10))
@@ -144,6 +164,20 @@ on oknoTranskrypcji(pliki)
 	set nrFormatu to ((listaFormatow's indexOfSelectedItem()) as integer) + 1
 	set nrTrybu to ((listaTrybow's indexOfSelectedItem()) as integer) + 1
 	set czas to ((poleCzasu's state()) as integer) is 1
+	set kluczZapisu to item (((listaZapisu's indexOfSelectedItem()) as integer) + 1) of kluczeZapisu
+	set folderZapisu to ""
+	if kluczZapisu is "biurko" then
+		set folderZapisu to POSIX path of (path to desktop folder)
+	else if kluczZapisu is "dokumenty" then
+		set folderZapisu to POSIX path of (path to documents folder)
+	else if kluczZapisu is "inny" then
+		set folderZapisu to innyFolder
+	else if kluczZapisu is "wybierz" then
+		set folderZapisu to POSIX path of (choose folder with prompt "Gdzie zapisać transkrypcję?")
+		zapiszUstawienie("folder", folderZapisu)
+		set kluczZapisu to "inny"
+	end if
+	zapiszUstawienie("zapis", kluczZapisu)
 	zapiszUstawienie("format", item nrFormatu of ETYKIETY_FORMATOW)
 	zapiszUstawienie("tryb", item nrTrybu of KLUCZE_TRYBOW)
 	if czas then
@@ -151,7 +185,7 @@ on oknoTranskrypcji(pliki)
 	else
 		zapiszUstawienie("czas", "0")
 	end if
-	return {item nrFormatu of KODY_FORMATOW, item nrTrybu of KODY_TRYBOW, czas}
+	return {item nrFormatu of KODY_FORMATOW, item nrTrybu of KODY_TRYBOW, czas, folderZapisu}
 end oknoTranskrypcji
 
 on etykieta(tekst, ramka, rozmiar)
@@ -161,6 +195,17 @@ on etykieta(tekst, ramka, rozmiar)
 	if rozmiar < 12 then pole's setTextColor:(current application's NSColor's secondaryLabelColor())
 	return pole
 end etykieta
+
+-- „Wykłady  (~/Documents/Wykłady)” – nazwa folderu i skrócona ścieżka do listy „Zapisz w:”.
+on nazwaFolderu(sciezka)
+	set krotka to sciezka
+	set dom to POSIX path of (path to home folder)
+	if sciezka starts with dom and (length of sciezka) > (length of dom) then
+		set krotka to "~/" & (text ((length of dom) + 1) thru -1 of sciezka)
+	end if
+	if krotka ends with "/" and (length of krotka) > 1 then set krotka to text 1 thru -2 of krotka
+	return nazwaPliku(sciezka) & "  (" & krotka & ")"
+end nazwaFolderu
 
 on indeksNa(wartosc, lista, domyslny)
 	repeat with i from 1 to count of lista

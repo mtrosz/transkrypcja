@@ -23,9 +23,10 @@ Przeciągnij nagranie (lub kilka) na ikonkę w Docku albo kliknij ikonkę i wybi
 
 - **Format** – Tekst albo Word,
 - **Tryb** – Dokładnie (ok. 10–15 min na godzinę nagrania) albo Szybko (ok. 4–5 min),
+- **Zapisz w** – obok nagrania, na Biurku, w Dokumentach albo w wybranym folderze (**Inny folder…**; zapamiętany folder pojawia się potem na liście),
 - **Znaczniki czasu** – każdy fragment w osobnej linii z czasem, np. `[00:04:12]`,
 
-i kliknij **Generuj** (albo Enter – okno pamięta ostatnie ustawienia). Gotowy plik pojawi się obok nagrania.
+i kliknij **Generuj** (albo Enter – okno pamięta ostatnie ustawienia). Gotowy plik pojawi się w wybranym miejscu – jeśli folderu nie ma (np. odłączony pendrive), plik trafi na Biurko.
 
 ## Pierwsze uruchomienie – pytania o dostęp
 
