@@ -100,7 +100,7 @@ krok "Test: przepisuję krótkie nagranie próbne"
 TEST_DIR="$(mktemp -d)"
 if say -v Zosia "Sąd Najwyższy oddalił kasację." -o "$TEST_DIR/test.aiff" 2>/dev/null; then
   "$PY" "$APP_DIR/silnik/transcribe.py" "$TEST_DIR/test.aiff" --format txt --tryb szybko \
-    --status "$TEST_DIR/status.json" || true
+    --status "$TEST_DIR/status.json" --bez-historii || true
   if grep -q "ajwyższ" "$TEST_DIR/test.txt" 2>/dev/null && grep -q "kasacj" "$TEST_DIR/test.txt"; then
     printf '\nINSTALACJA OK. Wynik testu: %s\n' "$(cat "$TEST_DIR/test.txt")"
   else

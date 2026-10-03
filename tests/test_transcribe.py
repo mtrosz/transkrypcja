@@ -5,6 +5,7 @@ import sys
 import types
 from pathlib import Path
 
+import historia
 import pytest
 import transcribe
 import zapis
@@ -256,3 +257,80 @@ def test_uruchom_folder_tylko_do_odczytu_uwaga_o_biurku(tmp_path, monkeypatch):
     _, st, _ = odpal(tmp_path, AtrapaSilnika(FRAGMENTY), folder=cel)
     assert st["wynik"] == str(tmp_path / "Biurko" / "Wykład 3.txt")
     assert st["uwaga"] == "Plik zapisano na Biurku."
+
+
+def odpal_z_historia(tmp_path, silnik, **kwargs):
+    plik = tmp_path / "historia.json"
+    nagranie = tmp_path / "Wykład 3.m4a"
+    nagranie.write_bytes(b"audio")
+    (tmp_path / "Biurko").mkdir(exist_ok=True)
+    kod = transcribe.uruchom(nagranie, "txt", "dokladnie", Status(tmp_path / "status.json", odstep_s=0), silnik,
+                             None, tmp_path / "log.txt", tmp_path / "Biurko", historia=plik, **kwargs)
+    return kod, historia.wczytaj(plik)
+
+
+def test_historia_sukces(tmp_path):
+    kod, wpisy = odpal_z_historia(tmp_path, AtrapaSilnika(FRAGMENTY))
+    assert kod == 0
+    assert len(wpisy) == 1
+    assert wpisy[0]["nagranie"] == str(tmp_path / "Wykład 3.m4a")
+    assert wpisy[0]["status"] == "gotowe"
+    assert wpisy[0]["wynik"] == str(tmp_path / "Wykład 3.txt")
+    assert wpisy[0]["pid"] == os.getpid()
+
+
+def test_historia_w_trakcie_podczas_transkrypcji(tmp_path):
+    zapamietane = []
+    silnik = AtrapaSilnika(FRAGMENTY)
+    oryginal = silnik.transkrybuj
+    silnik.transkrybuj = lambda *a: zapamietane.extend(historia.wczytaj(tmp_path / "historia.json")) or oryginal(*a)
+    odpal_z_historia(tmp_path, silnik)
+    assert zapamietane[0]["status"] == "w_trakcie"
+
+
+@pytest.mark.parametrize("silnik, komunikat", [
+    (AtrapaSilnika(blad_odczytu=RuntimeError("x")), "Nie udało się odczytać pliku „Wykład 3.m4a”. Czy to na pewno nagranie?"),
+    (AtrapaSilnika([Fragment(0, 30, "Dziękuję za obejrzenie.", 0.95, -1.8)]), "W nagraniu „Wykład 3.m4a” nie wykryto mowy."),
+    (AtrapaSilnika(blad_transkrypcji=ValueError("x")), NAPRAWA),
+])
+def test_historia_bledy(tmp_path, silnik, komunikat):
+    kod, wpisy = odpal_z_historia(tmp_path, silnik)
+    assert kod == 1
+    assert wpisy[0]["status"] == "blad"
+    assert wpisy[0]["blad"] == komunikat
+
+
+def test_historia_brak_dostepu(tmp_path, monkeypatch):
+    monkeypatch.setattr(transcribe, "sprawdz_dostep", lambda s: (_ for _ in ()).throw(PermissionError("nie")))
+    _, wpisy = odpal_z_historia(tmp_path, AtrapaSilnika(FRAGMENTY))
+    assert wpisy[0]["status"] == "blad"
+    assert wpisy[0]["blad"].startswith("macOS nie pozwolił otworzyć pliku")
+
+
+def test_blad_historii_nie_przerywa_transkrypcji(tmp_path, monkeypatch):
+    def zepsuj(*a, **k):
+        raise OSError("dysk pełny")
+
+    monkeypatch.setattr(historia, "dodaj", zepsuj)
+    monkeypatch.setattr(historia, "zakoncz", zepsuj)
+    kod, _ = odpal_z_historia(tmp_path, AtrapaSilnika(FRAGMENTY))
+    assert kod == 0
+    assert (tmp_path / "Wykład 3.txt").exists()
+    assert "dysk pełny" in (tmp_path / "log.txt").read_text(encoding="utf-8")
+
+
+def test_main_przekazuje_historie(tmp_path, monkeypatch):
+    monkeypatch.setenv("TRANSKRYPCJA_KATALOG", str(tmp_path))
+    for zmienna in ("PATH", "HF_HOME", "HF_HUB_OFFLINE"):
+        monkeypatch.setenv(zmienna, os.environ.get(zmienna, ""))
+    monkeypatch.setitem(sys.modules, "whisper_mlx", types.ModuleType("whisper_mlx"))
+    monkeypatch.setattr(transcribe.signal, "signal", lambda *a: None)
+    wywolania = []
+    monkeypatch.setattr(transcribe, "uruchom", lambda *a, **k: wywolania.append((a, k)) or 0)
+    argumenty = [str(tmp_path / "a.m4a"), "--format", "txt", "--tryb", "szybko", "--status", str(tmp_path / "s.json")]
+
+    transcribe.main(argumenty)
+    transcribe.main(argumenty + ["--bez-historii"])
+
+    assert wywolania[0][1]["historia"] == tmp_path / "historia.json"
+    assert wywolania[1][1]["historia"] is None

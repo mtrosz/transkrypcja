@@ -1,7 +1,9 @@
 """Silnik transkrypcji – uruchamiany przez Transkrypcja.app w tle.
 
-Użycie: transcribe.py <nagranie> --format {txt,docx} [--czas] --tryb {dokladnie,szybko} --status <status.json> [--folder <katalog>]
-Wynik i błędy trafiają do pliku status.json (patrz status.py); kod wyjścia 0 = sukces, 1 = błąd.
+Użycie: transcribe.py <nagranie> --format {txt,docx} [--czas] --tryb {dokladnie,szybko} --status <status.json>
+        [--folder <katalog>] [--bez-historii]
+Wynik i błędy trafiają do pliku status.json (patrz status.py) i do historii (historia.py);
+kod wyjścia 0 = sukces, 1 = błąd.
 """
 import argparse
 import datetime
@@ -11,6 +13,7 @@ import sys
 import traceback
 from pathlib import Path
 
+import historia as historia_
 from filtry import filtruj
 from status import Status
 from zapis import zapisz
@@ -44,40 +47,56 @@ def sprawdz_dostep(nagranie: Path) -> None:
         pass
 
 
+def w_historii(log: Path, nagranie: Path, funkcja, *args, **kwargs):
+    """Zapis historii nigdy nie przerywa transkrypcji – błąd trafia tylko do log.txt."""
+    try:
+        return funkcja(*args, **kwargs)
+    except Exception:
+        zaloguj(log, nagranie)
+        return None
+
+
 def uruchom(nagranie: Path, format: str, tryb: str, status: Status, silnik, podpowiedz: str | None,
-            log: Path, biurko: Path, czas: bool = False, folder: Path | None = None) -> int:
+            log: Path, biurko: Path, czas: bool = False, folder: Path | None = None,
+            historia: Path | None = None) -> int:
     nazwa = nagranie.name
+    wpis = w_historii(log, nagranie, historia_.dodaj, historia, nagranie) if historia else None
+
+    def blad(komunikat: str) -> int:
+        status.blad(komunikat)
+        if wpis:
+            w_historii(log, nagranie, historia_.zakoncz, historia, wpis, "blad", blad=komunikat)
+        return 1
+
     try:
         status.etap("wczytywanie")
         try:
             sprawdz_dostep(nagranie)
         except PermissionError:
             zaloguj(log, nagranie)
-            status.blad(KOMUNIKAT_DOSTEP.format(nazwa=nazwa))
-            return 1
+            return blad(KOMUNIKAT_DOSTEP.format(nazwa=nazwa))
         try:
             audio = silnik.wczytaj_audio(nagranie)
         except Exception:
             zaloguj(log, nagranie)
-            status.blad(KOMUNIKAT_ODCZYT.format(nazwa=nazwa))
-            return 1
+            return blad(KOMUNIKAT_ODCZYT.format(nazwa=nazwa))
 
         status.etap("transkrypcja")
         fragmenty = filtruj(silnik.transkrybuj(audio, tryb, podpowiedz, lambda ulamek: status.postep(ulamek * 100)))
         if not fragmenty:
-            status.blad(KOMUNIKAT_CISZA.format(nazwa=nazwa))
-            return 1
+            return blad(KOMUNIKAT_CISZA.format(nazwa=nazwa))
 
         status.etap("zapis")
         wynik = zapisz(fragmenty, nagranie, format, biurko, czas=czas, folder=folder)
         oczekiwany = folder if folder is not None else nagranie.parent
         uwaga = UWAGA_BIURKO if wynik.parent.resolve() != oczekiwany.resolve() else ""
         status.wynik(wynik, uwaga)
+        if wpis:
+            w_historii(log, nagranie, historia_.zakoncz, historia, wpis, "gotowe", wynik=wynik)
         return 0
     except Exception:
         zaloguj(log, nagranie)
-        status.blad(KOMUNIKAT_NAPRAWA.format(nazwa=nazwa))
-        return 1
+        return blad(KOMUNIKAT_NAPRAWA.format(nazwa=nazwa))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -88,6 +107,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--tryb", choices=["dokladnie", "szybko"], required=True)
     parser.add_argument("--status", type=Path, required=True)
     parser.add_argument("--folder", type=Path, help="folder na wynik (domyślnie obok nagrania)")
+    parser.add_argument("--bez-historii", action="store_true", help="nie zapisuj w historii (np. test instalatora)")
     args = parser.parse_args(argv)
 
     # Anuluj w okienku wysyła SIGTERM – zamieniamy go na wyjątek, żeby zapis.py posprzątał plik częściowy.
@@ -109,7 +129,7 @@ def main(argv: list[str] | None = None) -> int:
 
     return uruchom(args.nagranie, args.format, args.tryb, status, silnik,
                    wczytaj_podpowiedz(SLOWNIK), log, Path.home() / "Desktop", czas=args.czas,
-                   folder=args.folder)
+                   folder=args.folder, historia=None if args.bez_historii else katalog / "historia.json")
 
 
 if __name__ == "__main__":

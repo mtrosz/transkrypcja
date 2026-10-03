@@ -14,6 +14,7 @@ property TYTUL : "Transkrypcja"
 
 on run
 	if not przygotuj(true) then return
+	if not oknoHistorii() then return
 	try
 		set pliki to choose file with prompt "Wybierz nagranie do przepisania:" with multiple selections allowed
 	on error number -128
@@ -62,10 +63,12 @@ on przetworz(pliki)
 	set liczba to count of pliki
 	set wyniki to {}
 	set komunikaty to {}
+	set bylBlad to false
 
 	set progress total steps to 100
 	repeat with i from 1 to liczba
 		set pid to ""
+		set plik to ""
 		try
 			set plik to POSIX path of (item i of pliki)
 			set progress description to "Plik " & i & " z " & liczba & ": " & nazwaPliku(plik)
@@ -85,8 +88,10 @@ on przetworz(pliki)
 				if uwaga is not "" and komunikaty does not contain uwaga then set end of komunikaty to uwaga
 			else if etap is "blad" then
 				set end of komunikaty to czytajStatus(statusPlik, "blad")
+				set bylBlad to true
 			else
 				set end of komunikaty to "Coś poszło nie tak przy pliku „" & nazwaPliku(plik) & "”. Aplikacja wymaga naprawy – poproś o pomoc."
+				set bylBlad to true
 			end if
 		on error errMsg number n
 			if n is -128 then
@@ -94,13 +99,107 @@ on przetworz(pliki)
 				do shell script "rm -rf " & quoted form of tmp
 				return
 			end if
-			error errMsg number n
+			-- Błąd samego okienka: zapisujemy go do logu i kończymy paczkę. Silnika nie zabijamy –
+			-- może dokończyć bieżące nagranie, a wynik i tak trafi do historii.
+			zalogujBladOkienka(plik, errMsg, n)
+			try
+				do shell script "rm -rf " & quoted form of tmp
+			end try
+			pokazBladOkienka(plik, i < liczba)
+			return
 		end try
 	end repeat
 
 	do shell script "rm -rf " & quoted form of tmp
-	pokazPodsumowanie(wyniki, komunikaty)
+	pokazPodsumowanie(wyniki, komunikaty, bylBlad)
 end przetworz
+
+-- Okno „Historia transkrypcji” po kliknięciu ikonki. Linki w liście otwierają transkrypcję albo folder nagrania.
+-- Zwraca true, gdy wybrano „Nowe nagranie…” (albo historii nie ma), false – aplikacja ma się zakończyć.
+on oknoHistorii()
+	set katalog to katalogAplikacji()
+	set polecenie to quoted form of (katalog & "venv/bin/python") & " " & quoted form of (katalog & "silnik/historia.py")
+	try
+		set tresc to do shell script polecenie & " lista"
+		set problemy to do shell script polecenie & " czy-problemy"
+	on error errMsg number n
+		if n is -128 then error number -128
+		return true
+	end try
+	if tresc is "" then return true
+
+	set dane to (current application's NSString's stringWithString:tresc)'s dataUsingEncoding:(current application's NSUTF8StringEncoding)
+	set tekst to current application's NSAttributedString's alloc()'s initWithHTML:dane documentAttributes:(missing value)
+	set przewijanie to current application's NSScrollView's alloc()'s initWithFrame:{{0, 0}, {480, 260}}
+	przewijanie's setHasVerticalScroller:true
+	przewijanie's setBorderType:(current application's NSBezelBorder)
+	przewijanie's setDrawsBackground:false
+	set rozmiar to przewijanie's contentSize()
+	set lista to current application's NSTextView's alloc()'s initWithFrame:{{0, 0}, {width of rozmiar, height of rozmiar}}
+	lista's setMinSize:{0, height of rozmiar}
+	lista's setMaxSize:{100000, 100000}
+	lista's setVerticallyResizable:true
+	lista's setHorizontallyResizable:false
+	lista's setAutoresizingMask:(current application's NSViewWidthSizable)
+	(lista's textContainer())'s setWidthTracksTextView:true
+	lista's setTextContainerInset:{4, 6}
+	lista's setEditable:false
+	lista's setSelectable:true
+	lista's setDrawsBackground:false
+	(lista's textStorage())'s setAttributedString:tekst
+	-- HTML ustawia czarny tekst – w trybie ciemnym byłby nieczytelny. Linki zachowują swój kolor.
+	lista's setTextColor:(current application's NSColor's labelColor())
+	przewijanie's setDocumentView:lista
+
+	set okno to current application's NSAlert's alloc()'s init()
+	okno's setMessageText:"Historia transkrypcji"
+	okno's setInformativeText:"Kliknij nazwę transkrypcji, żeby ją otworzyć, albo nazwę nagrania, żeby pokazać jego folder."
+	okno's setAccessoryView:przewijanie
+	okno's addButtonWithTitle:"Nowe nagranie…"
+	set przyciskZamknij to okno's addButtonWithTitle:"Zamknij"
+	przyciskZamknij's setKeyEquivalent:(character id 27)
+	if problemy is "tak" then okno's addButtonWithTitle:"Zgłoś błąd"
+	activate
+	set odpowiedz to (okno's runModal()) as integer
+	if odpowiedz is 1000 then return true
+	if odpowiedz is 1002 then zglosBlad()
+	return false
+end oknoHistorii
+
+-- Otwiera program pocztowy z gotowym zgłoszeniem (silnik/zgloszenie.py) i pokazuje log.txt w Finderze.
+on zglosBlad()
+	set katalog to katalogAplikacji()
+	set adres to ""
+	try
+		set adres to do shell script quoted form of (katalog & "venv/bin/python") & " " & quoted form of (katalog & "silnik/zgloszenie.py") & " link"
+		do shell script "open " & quoted form of adres
+	on error errMsg number n
+		if n is -128 then error number -128
+		set odbiorca to "autorów aplikacji"
+		if adres starts with "mailto:" then set odbiorca to text 8 thru ((offset of "?" in adres) - 1) of adres
+		activate
+		display dialog "Nie udało się otworzyć programu pocztowego. Napisz proszę do " & odbiorca & " i dołącz plik log.txt, który pokażę w Finderze." buttons {"OK"} default button "OK" with title TYTUL with icon caution
+	end try
+	do shell script "f=" & quoted form of (katalog & "log.txt") & "; [ -f \"$f\" ] && open -R \"$f\" || true"
+end zglosBlad
+
+-- Dopisuje błąd okienka do log.txt w tym samym układzie co silnik.
+on zalogujBladOkienka(plik, errMsg, n)
+	try
+		do shell script "printf -- '--- %s %s\\n%s %s: %s\\n\\n' \"$(date '+%Y-%m-%d %H:%M:%S')\" " & quoted form of plik & " " & quoted form of "Błąd okienka" & " " & (n as text) & " " & quoted form of errMsg & " >> " & quoted form of (katalogAplikacji() & "log.txt")
+	end try
+end zalogujBladOkienka
+
+-- kolejne: true, gdy w paczce zostały jeszcze nieprzetworzone pliki.
+on pokazBladOkienka(plik, kolejne)
+	set tekst to "Coś poszło nie tak w oknie aplikacji"
+	if plik is not "" then set tekst to tekst & " przy pliku „" & nazwaPliku(plik) & "”"
+	set tekst to tekst & ". Transkrypcja tego pliku może jeszcze trwać w tle – kliknij później ikonkę, a w historii zobaczysz, co się udało."
+	if kolejne then set tekst to tekst & " Kolejne pliki nie zostały przetworzone."
+	activate
+	set odpowiedz to button returned of (display dialog tekst buttons {"Zgłoś błąd", "OK"} default button "OK" with title TYTUL with icon stop)
+	if odpowiedz is "Zgłoś błąd" then zglosBlad()
+end pokazBladOkienka
 
 -- Jedno okno: format, tryb, miejsce zapisu i znaczniki czasu, z zapamiętanymi ostatnimi wyborami (defaults pl.transkrypcja).
 -- Zwraca {kod formatu, kod trybu, czas (true/false), folder zapisu ("" = obok nagrania)}.
@@ -319,7 +418,8 @@ on czekaj(pid, statusPlik)
 	end repeat
 end czekaj
 
-on pokazPodsumowanie(wyniki, komunikaty)
+-- bylBlad: któreś nagranie się nie udało (komunikaty mogą też zawierać same uwagi, np. o zapisie na Biurku).
+on pokazPodsumowanie(wyniki, komunikaty, bylBlad)
 	activate
 	set tekst to ""
 	if (count of wyniki) is 1 then
@@ -336,11 +436,14 @@ on pokazPodsumowanie(wyniki, komunikaty)
 	end repeat
 
 	if (count of wyniki) > 0 then
-		set odpowiedz to button returned of (display dialog tekst buttons {"OK", "Pokaż plik"} default button "Pokaż plik" with title TYTUL with icon note)
+		set przyciski to {"OK", "Pokaż plik"}
+		if bylBlad then set przyciski to {"Zgłoś błąd", "OK", "Pokaż plik"}
+		set odpowiedz to button returned of (display dialog tekst buttons przyciski default button "Pokaż plik" with title TYTUL with icon note)
 		if odpowiedz is "Pokaż plik" then do shell script "open -R " & quoted form of (item 1 of wyniki)
 	else
-		display dialog tekst buttons {"OK"} default button "OK" with title TYTUL with icon stop
+		set odpowiedz to button returned of (display dialog tekst buttons {"Zgłoś błąd", "OK"} default button "OK" with title TYTUL with icon stop)
 	end if
+	if odpowiedz is "Zgłoś błąd" then zglosBlad()
 end pokazPodsumowanie
 
 on odczytajUstawienie(klucz, domyslna)

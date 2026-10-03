@@ -19,7 +19,7 @@ Instalacja z pobranego repozytorium (bez jednolinijkowca): w jego folderze `bash
 
 ## Użycie
 
-Przeciągnij nagranie (lub kilka) na ikonkę w Docku albo kliknij ikonkę i wybierz plik. W oknie wybierz:
+Przeciągnij nagranie (lub kilka) na ikonkę w Docku albo kliknij ikonkę – pojawi się **historia transkrypcji** – i wybierz **Nowe nagranie…**. W oknie wybierz:
 
 - **Format** – Tekst albo Word,
 - **Tryb** – Dokładnie (ok. 10–15 min na godzinę nagrania) albo Szybko (ok. 4–5 min),
@@ -27,6 +27,10 @@ Przeciągnij nagranie (lub kilka) na ikonkę w Docku albo kliknij ikonkę i wybi
 - **Znaczniki czasu** – każdy fragment w osobnej linii z czasem, np. `[00:04:12]`,
 
 i kliknij **Generuj** (albo Enter – okno pamięta ostatnie ustawienia). Gotowy plik pojawi się w wybranym miejscu – jeśli folderu nie ma (np. odłączony pendrive), plik trafi na Biurko.
+
+## Historia transkrypcji
+
+Po kliknięciu ikonki widać ostatnie 30 nagrań: ✅ gotowe, ❌ błąd (z powodem), ⚠️ przerwane (np. aplikacja została zamknięta albo coś się wysypało w trakcie). Kliknięcie nazwy transkrypcji otwiera plik, a kliknięcie nazwy nagrania – jego folder. Historia jest zapisywana w `~/Library/Application Support/Transkrypcja/historia.json`.
 
 ## Pierwsze uruchomienie – pytania o dostęp
 
@@ -39,6 +43,8 @@ Gdy nagranie pochodzi z Biurka, Pobranych, Dokumentów, iCloud Drive albo z pend
 ## Gdy coś nie działa
 
 Szczegóły błędów: `~/Library/Application Support/Transkrypcja/log.txt`.
+
+Przy błędzie (w podsumowaniu albo w historii) jest przycisk **Zgłoś błąd** – otwiera program pocztowy z gotowym mailem do autorów (z końcówką `log.txt`) i pokazuje `log.txt` w Finderze, gdyby trzeba go było dołączyć.
 
 ## Odinstalowanie
 
